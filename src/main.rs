@@ -44,8 +44,13 @@ impl Repl for Command {
             self.print_prompt();
             self.read();
 
-            if self.prompt.trim() == "exit" {
-                break;
+            match self.prompt.trim() {
+                "echo" => {
+                    print!("$ ");
+                    io::stdout().flush().unwrap();
+                }
+                "exit" => break,
+                _ => continue,
             }
 
             self.eval();
