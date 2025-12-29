@@ -128,6 +128,10 @@ impl Shell {
         }
     }
 
+    fn cmd_pwd(&self) {
+        println!("{}", std::env::current_dir().unwrap().display());
+    }
+
     fn cmd_external(&self, command: &str, args: &str) {
         if let Some(path) = self.find_executable(command) {
             let args: Vec<&str> = if args.is_empty() {
@@ -153,13 +157,6 @@ impl Shell {
             }
 
             self.eval();
-        }
-    }
-
-    fn cmd_pwd(&self) {
-        match std::env::current_dir() {
-            Ok(path) => println!("{}", path.display()),
-            Err(e) => eprintln!("pwd: {}", e),
         }
     }
 }
