@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::io::{self, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command as ProcessCommand;
 
@@ -27,10 +28,23 @@ impl Shell {
             .collect()
     }
 
+    fn is_executable(path: &Path) -> bool {
+        match std::fs::metadata(path) {
+            Ok(metadata) => {
+                let permissions = metadata.permissions();
+                // Check if any execute bit is set (owner, group, or other)
+                permissions.mode() & 0o111 != 0
+            }
+            Err(_) => false,
+        }
+    }
+
     fn find_executable(&self, cmd: &str) -> Option<String> {
         for dir in &self.paths {
             let full_path = format!("{}/{}", dir, cmd);
-            if Path::new(&full_path).exists() {
+            let path = Path::new(&full_path);
+
+            if path.exists() && Self::is_executable(path) {
                 return Some(full_path);
             }
         }
