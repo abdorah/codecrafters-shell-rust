@@ -6,7 +6,7 @@ fn main() {
     print!("$ ");
     io::stdout().flush().unwrap();
     let mut message = String::new();
-    io::read_to_string(message).unwrap();
+    io::stdin().read_line(message).unwrap();
     let message = message.trim();
     println!("{}: command not found", message);
 }
