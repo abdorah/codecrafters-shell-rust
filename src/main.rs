@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::io::{self, Write};
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command as ProcessCommand;
 
@@ -21,31 +20,60 @@ impl Shell {
     }
 
     fn parse_path() -> Vec<String> {
+        let separator = if cfg!(windows) { ';' } else { ':' };
+
         std::env::var("PATH")
             .unwrap_or_default()
-            .split(':')
+            .split(separator)
             .map(String::from)
             .collect()
     }
 
+    #[cfg(unix)]
     fn is_executable(path: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+
         match std::fs::metadata(path) {
-            Ok(metadata) => {
-                let permissions = metadata.permissions();
-                // Check if any execute bit is set (owner, group, or other)
-                permissions.mode() & 0o111 != 0
-            }
+            Ok(metadata) => metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0),
             Err(_) => false,
         }
     }
 
-    fn find_executable(&self, cmd: &str) -> Option<String> {
-        for dir in &self.paths {
-            let full_path = format!("{}/{}", dir, cmd);
-            let path = Path::new(&full_path);
+    #[cfg(windows)]
+    fn is_executable(path: &Path) -> bool {
+        if !path.is_file() {
+            return false;
+        }
 
-            if path.exists() && Self::is_executable(path) {
-                return Some(full_path);
+        match path.extension() {
+            Some(ext) => {
+                let ext = ext.to_string_lossy().to_lowercase();
+                matches!(ext.as_str(), "exe" | "bat" | "cmd" | "com")
+            }
+            None => false,
+        }
+    }
+
+    fn find_executable(&self, cmd: &str) -> Option<String> {
+        // On Windows, also check with common extensions
+        #[cfg(windows)]
+        let candidates: Vec<String> = vec![
+            cmd.to_string(),
+            format!("{}.exe", cmd),
+            format!("{}.bat", cmd),
+            format!("{}.cmd", cmd),
+        ];
+
+        #[cfg(unix)]
+        let candidates: Vec<String> = vec![cmd.to_string()];
+
+        for dir in &self.paths {
+            for candidate in &candidates {
+                let full_path = Path::new(dir).join(candidate);
+
+                if full_path.exists() && Self::is_executable(&full_path) {
+                    return full_path.to_str().map(String::from);
+                }
             }
         }
         None
@@ -101,14 +129,14 @@ impl Shell {
     }
 
     fn cmd_external(&self, command: &str, args: &str) {
-        if self.find_executable(command).is_some() {
+        if let Some(path) = self.find_executable(command) {
             let args: Vec<&str> = if args.is_empty() {
                 vec![]
             } else {
                 args.split_whitespace().collect()
             };
 
-            let _ = ProcessCommand::new(command).args(&args).status();
+            let _ = ProcessCommand::new(&path).args(&args).status();
         } else {
             println!("{}: command not found", command);
         }
