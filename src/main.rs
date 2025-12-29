@@ -133,15 +133,14 @@ impl Shell {
     }
 
     fn cmd_external(&self, command: &str, args: &str) {
-        if let Some(path) = self.find_executable(command) {
+        if self.find_executable(command).is_some() {
             let args: Vec<&str> = if args.is_empty() {
                 vec![]
             } else {
                 args.split_whitespace().collect()
             };
-            println!("{}", path);
 
-            let _ = ProcessCommand::new(&path).args(&args).status();
+            let _ = ProcessCommand::new(command).args(&args).status();
         } else {
             println!("{}: command not found", command);
         }
