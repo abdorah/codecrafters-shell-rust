@@ -2,26 +2,19 @@ use std::collections::HashSet;
 use std::io::{self, Write};
 
 #[derive(Debug)]
-struct Command {
+struct Shell {
     prompt: String,
+    builtins: HashSet<&'static str>,
 }
 
-impl Command {
+impl Shell {
     fn new() -> Self {
-        Command {
+        Shell {
             prompt: String::new(),
+            builtins: HashSet::from(["echo", "exit", "type"]),
         }
     }
-}
 
-trait Repl {
-    fn read(&mut self);
-    fn eval(&self);
-    fn print_prompt(&self);
-    fn run(&mut self);
-}
-
-impl Repl for Command {
     fn print_prompt(&self) {
         print!("$ ");
         io::stdout().flush().unwrap();
@@ -32,26 +25,39 @@ impl Repl for Command {
         io::stdin().read_line(&mut self.prompt).unwrap();
     }
 
-    fn eval(&self) {
-        let mut builtin_commands: HashSet<String> = HashSet::new();
-        builtin_commands.insert("type".to_string());
-        builtin_commands.insert("echo".to_string());
-        builtin_commands.insert("exit".to_string());
+    fn parse(&self) -> (&str, &str) {
         let message = self.prompt.trim();
-        if message.is_empty() {
-        } else if let Some(striped_message) = message.strip_prefix("echo ") {
-            println!("{}", striped_message);
-        } else if message == "echo" {
-            println!(); // echo with no args prints empty line
-        } else if let Some(striped_message) = message.strip_prefix("type ") {
-            let striped_message = striped_message.trim();
-            if builtin_commands.contains(striped_message) {
-                println!("{} is a shell builtin", striped_message);
-            } else {
-                println!("{}: not found", striped_message);
-            }
+        match message.split_once(' ') {
+            Some((cmd, args)) => (cmd, args),
+            None => (message, ""),
+        }
+    }
+
+    fn eval(&self) {
+        let (command, args) = self.parse();
+
+        if command.is_empty() {
+            return;
+        }
+
+        match command {
+            "echo" => self.cmd_echo(args),
+            "type" => self.cmd_type(args),
+            "exit" => {}
+            _ => println!("{}: command not found", command),
+        }
+    }
+
+    fn cmd_echo(&self, args: &str) {
+        println!("{}", args);
+    }
+
+    fn cmd_type(&self, args: &str) {
+        let cmd = args.trim();
+        if self.builtins.contains(cmd) {
+            println!("{} is a shell builtin", cmd);
         } else {
-            println!("{}: command not found", message);
+            println!("{}: not found", cmd);
         }
     }
 
@@ -60,16 +66,17 @@ impl Repl for Command {
             self.print_prompt();
             self.read();
 
-            let message = self.prompt.trim();
-            match message {
-                "exit" => break,
-                _ => self.eval(),
+            let (command, _) = self.parse();
+            if command == "exit" {
+                break;
             }
+
+            self.eval();
         }
     }
 }
 
 fn main() {
-    let mut command = Command::new();
-    command.run();
+    let mut shell = Shell::new();
+    shell.run();
 }
