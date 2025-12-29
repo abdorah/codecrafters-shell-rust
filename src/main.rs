@@ -34,9 +34,13 @@ impl Repl for Command {
     fn eval(&self) {
         let message = self.prompt.trim();
         if message.is_empty() {
-            return;
+        } else if let Some(striped_message) = message.strip_prefix("echo ") {
+            println!("{}", striped_message);
+        } else if message == "echo" {
+            println!(); // echo with no args prints empty line
+        } else {
+            println!("{}: command not found", message);
         }
-        println!("{}: command not found", message);
     }
 
     fn run(&mut self) {
@@ -44,16 +48,11 @@ impl Repl for Command {
             self.print_prompt();
             self.read();
 
-            match self.prompt.trim() {
-                "echo" => {
-                    print!("$ ");
-                    io::stdout().flush().unwrap();
-                }
+            let message = self.prompt.trim();
+            match message {
                 "exit" => break,
-                _ => continue,
+                _ => self.eval(),
             }
-
-            self.eval();
         }
     }
 }
