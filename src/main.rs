@@ -5,10 +5,9 @@ fn main() {
     // TODO: Uncomment the code below to pass the first stage
     print!("$ ");
     io::stdout().flush().unwrap();
-    let stdin = io::read_to_string(io::stdin());
+    let mut message = String::new();
+    let stdin = io::read_to_string(message);
     if let Ok(message) = stdin {
         println!("{}: command not found", message);
     }
-    print!("$ ");
-    io::stdout().flush().unwrap();
 }
