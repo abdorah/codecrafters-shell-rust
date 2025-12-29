@@ -1,11 +1,12 @@
 #[allow(unused_imports)]
 use std::io::{self, Write};
 
-fn main() -> Result<()> {
+fn main() {
     // TODO: Uncomment the code below to pass the first stage
     println!("$ ");
     io::stdout().flush().unwrap();
-    let stdin = io::read_to_string(io::stdin())?;
-    println!("{}: command not found", stdin);
-    Ok(())
+    let stdin = io::read_to_string(io::stdin());
+    if let Some(message) = stdin {
+        println!("{}: command not found", message);
+    }
 }
