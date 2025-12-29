@@ -157,8 +157,9 @@ impl Shell {
     }
 
     fn cmd_pwd(&self) {
-        if let Some(path) = std::path::Path::new(".").to_str() {
-            println!("{}", path);
+        match std::env::current_dir() {
+            Ok(path) => println!("{}", path.display()),
+            Err(e) => eprintln!("pwd: {}", e),
         }
     }
 }
