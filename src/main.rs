@@ -106,6 +106,7 @@ impl Shell {
         match command {
             "echo" => self.cmd_echo(args),
             "type" => self.cmd_type(args),
+            "pwd" => self.cmd_pwd(),
             "exit" => {}
             _ => self.cmd_external(command, args),
         }
@@ -152,6 +153,12 @@ impl Shell {
             }
 
             self.eval();
+        }
+    }
+
+    fn cmd_pwd(&self) {
+        if let Some(path) = std::path::Path::new(".").to_str() {
+            println!("{}", path);
         }
     }
 }
