@@ -139,6 +139,7 @@ impl Shell {
             } else {
                 args.split_whitespace().collect()
             };
+            println!("{}", path);
 
             let _ = ProcessCommand::new(&path).args(&args).status();
         } else {
