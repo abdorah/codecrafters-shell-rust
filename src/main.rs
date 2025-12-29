@@ -6,7 +6,7 @@ fn main() {
     println!("$ ");
     io::stdout().flush().unwrap();
     let stdin = io::read_to_string(io::stdin());
-    if let Some(message) = stdin {
+    if let Ok(message) = stdin {
         println!("{}: command not found", message);
     }
 }
