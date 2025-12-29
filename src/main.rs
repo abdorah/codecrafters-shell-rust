@@ -15,7 +15,7 @@ impl Shell {
         Shell {
             prompt: String::new(),
             paths: Self::parse_path(),
-            builtins: HashSet::from(["echo", "exit", "type"]),
+            builtins: HashSet::from(["echo", "exit", "type", "pwd"]),
         }
     }
 
@@ -55,7 +55,6 @@ impl Shell {
     }
 
     fn find_executable(&self, cmd: &str) -> Option<String> {
-        // On Windows, also check with common extensions
         #[cfg(windows)]
         let candidates: Vec<String> = vec![
             cmd.to_string(),
