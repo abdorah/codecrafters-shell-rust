@@ -1,9 +1,12 @@
 use std::collections::HashSet;
 use std::io::{self, Write};
+use std::path::Path;
+use std::process::Command as ProcessCommand;
 
 #[derive(Debug)]
 struct Shell {
     prompt: String,
+    paths: Vec<String>,
     builtins: HashSet<&'static str>,
 }
 
@@ -11,8 +14,27 @@ impl Shell {
     fn new() -> Self {
         Shell {
             prompt: String::new(),
+            paths: Self::parse_path(),
             builtins: HashSet::from(["echo", "exit", "type"]),
         }
+    }
+
+    fn parse_path() -> Vec<String> {
+        std::env::var("PATH")
+            .unwrap_or_default()
+            .split(':')
+            .map(String::from)
+            .collect()
+    }
+
+    fn find_executable(&self, cmd: &str) -> Option<String> {
+        for dir in &self.paths {
+            let full_path = format!("{}/{}", dir, cmd);
+            if Path::new(&full_path).exists() {
+                return Some(full_path);
+            }
+        }
+        None
     }
 
     fn print_prompt(&self) {
@@ -44,7 +66,7 @@ impl Shell {
             "echo" => self.cmd_echo(args),
             "type" => self.cmd_type(args),
             "exit" => {}
-            _ => println!("{}: command not found", command),
+            _ => self.cmd_external(command, args),
         }
     }
 
@@ -54,10 +76,27 @@ impl Shell {
 
     fn cmd_type(&self, args: &str) {
         let cmd = args.trim();
+
         if self.builtins.contains(cmd) {
             println!("{} is a shell builtin", cmd);
+        } else if let Some(path) = self.find_executable(cmd) {
+            println!("{} is {}", cmd, path);
         } else {
             println!("{}: not found", cmd);
+        }
+    }
+
+    fn cmd_external(&self, command: &str, args: &str) {
+        if self.find_executable(command).is_some() {
+            let args: Vec<&str> = if args.is_empty() {
+                vec![]
+            } else {
+                args.split_whitespace().collect()
+            };
+
+            let _ = ProcessCommand::new(command).args(&args).status();
+        } else {
+            println!("{}: command not found", command);
         }
     }
 
