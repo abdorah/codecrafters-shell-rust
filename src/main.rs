@@ -15,7 +15,7 @@ impl Shell {
         Shell {
             prompt: String::new(),
             paths: Self::parse_path(),
-            builtins: HashSet::from(["echo", "exit", "type", "pwd"]),
+            builtins: HashSet::from(["echo", "exit", "type", "pwd", "cd"]),
         }
     }
 
@@ -107,6 +107,7 @@ impl Shell {
             "echo" => self.cmd_echo(args),
             "type" => self.cmd_type(args),
             "pwd" => self.cmd_pwd(),
+            "cd" => self.cmd_cd(args),
             "exit" => {}
             _ => self.cmd_external(command, args),
         }
@@ -130,6 +131,14 @@ impl Shell {
 
     fn cmd_pwd(&self) {
         println!("{}", std::env::current_dir().unwrap().display());
+    }
+
+    fn cmd_cd(&self, args: &str) {
+        let path = Path::new(args.trim());
+
+        if !(Path::new(path).exists() && std::env::set_current_dir(path).is_ok()) {
+            println!("{args}: No such file or directory");
+        }
     }
 
     fn cmd_external(&self, command: &str, args: &str) {
