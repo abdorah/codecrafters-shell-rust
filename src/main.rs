@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::env;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command as ProcessCommand;
@@ -130,14 +131,30 @@ impl Shell {
     }
 
     fn cmd_pwd(&self) {
-        println!("{}", std::env::current_dir().unwrap().display());
+        println!("{}", env::current_dir().unwrap().display());
     }
-
     fn cmd_cd(&self, args: &str) {
-        let path = Path::new(args.trim());
+        let path = match args.trim() {
+            "" | "~" => env::var("HOME")
+                .or_else(|_| env::var("USERPROFILE"))
+                .unwrap_or_default(),
+            path if path.starts_with("~/") => {
+                let home = env::var("HOME")
+                    .or_else(|_| env::var("USERPROFILE"))
+                    .unwrap_or_default();
+                format!("{}{}", home, &path[1..])
+            }
+            path => path.to_string(),
+        };
 
-        if !(Path::new(path).exists() && std::env::set_current_dir(path).is_ok()) {
-            println!("{args}: No such file or directory");
+        let path = Path::new(&path);
+
+        if path.exists() {
+            if let Err(e) = env::set_current_dir(path) {
+                eprintln!("cd: {}: {}", path.display(), e);
+            }
+        } else {
+            eprintln!("cd: {}: No such file or directory", path.display());
         }
     }
 
