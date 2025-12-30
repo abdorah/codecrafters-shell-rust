@@ -23,7 +23,7 @@ impl Shell {
     fn parse_path() -> Vec<String> {
         let separator = if cfg!(windows) { ';' } else { ':' };
 
-        std::env::var("PATH")
+        env::var("PATH")
             .unwrap_or_default()
             .split(separator)
             .map(String::from)
@@ -34,30 +34,26 @@ impl Shell {
     fn is_executable(path: &Path) -> bool {
         use std::os::unix::fs::PermissionsExt;
 
-        match std::fs::metadata(path) {
-            Ok(metadata) => metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0),
-            Err(_) => false,
-        }
+        std::fs::metadata(path)
+            .map(|m| m.is_file() && (m.permissions().mode() & 0o111 != 0))
+            .unwrap_or(false)
     }
 
     #[cfg(windows)]
     fn is_executable(path: &Path) -> bool {
-        if !path.is_file() {
-            return false;
-        }
-
-        match path.extension() {
-            Some(ext) => {
-                let ext = ext.to_string_lossy().to_lowercase();
-                matches!(ext.as_str(), "exe" | "bat" | "cmd" | "com")
-            }
-            None => false,
-        }
+        path.is_file()
+            && path
+                .extension()
+                .map(|ext| {
+                    let ext = ext.to_string_lossy().to_lowercase();
+                    matches!(ext.as_str(), "exe" | "bat" | "cmd" | "com")
+                })
+                .unwrap_or(false)
     }
 
     fn find_executable(&self, cmd: &str) -> Option<String> {
         #[cfg(windows)]
-        let candidates: Vec<String> = vec![
+        let candidates = [
             cmd.to_string(),
             format!("{}.exe", cmd),
             format!("{}.bat", cmd),
@@ -65,7 +61,7 @@ impl Shell {
         ];
 
         #[cfg(unix)]
-        let candidates: Vec<String> = vec![cmd.to_string()];
+        let candidates = [cmd.to_string()];
 
         for dir in &self.paths {
             for candidate in &candidates {
@@ -81,23 +77,91 @@ impl Shell {
 
     fn print_prompt(&self) {
         print!("$ ");
-        io::stdout().flush().unwrap();
+        let _ = io::stdout().flush();
     }
 
-    fn read(&mut self) {
+    fn read(&mut self) -> bool {
         self.prompt.clear();
-        io::stdin().read_line(&mut self.prompt).unwrap();
+        match io::stdin().read_line(&mut self.prompt) {
+            Ok(0) => false,
+            Ok(_) => true,
+            Err(_) => false,
+        }
     }
 
     fn parse(&self) -> (&str, &str) {
         let message = self.prompt.trim();
-        match message.split_once(' ') {
-            Some((cmd, args)) => (cmd, args),
-            None => (message, ""),
-        }
+        message.split_once(' ').unwrap_or((message, ""))
     }
 
-    fn eval(&self) {
+    /// Parses arguments handling single quotes, double quotes, and escape sequences
+    fn parse_arguments(args: &str) -> Vec<String> {
+        let mut result = Vec::new();
+        let mut current_arg = String::new();
+        let mut in_single_quote = false;
+        let mut in_double_quote = false;
+        let mut chars = args.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            match c {
+                // Escape sequences in double quotes
+                '\\' if in_double_quote => {
+                    if let Some(&next) = chars.peek() {
+                        match next {
+                            '"' | '\\' | '$' | '`' => {
+                                current_arg.push(chars.next().unwrap());
+                            }
+                            _ => {
+                                // Keep backslash for other characters
+                                current_arg.push('\\');
+                            }
+                        }
+                    } else {
+                        current_arg.push('\\');
+                    }
+                }
+
+                // Escape sequences outside quotes
+                '\\' if !in_single_quote => {
+                    if let Some(next) = chars.next() {
+                        current_arg.push(next);
+                    }
+                }
+
+                // Single quote toggle (not inside double quotes)
+                '\'' if !in_double_quote => {
+                    in_single_quote = !in_single_quote;
+                }
+
+                // Double quote toggle (not inside single quotes)
+                '"' if !in_single_quote => {
+                    in_double_quote = !in_double_quote;
+                }
+
+                // Space outside quotes = argument separator
+                ' ' if !in_single_quote && !in_double_quote => {
+                    if !current_arg.is_empty() {
+                        result.push(current_arg.clone());
+                        current_arg.clear();
+                    }
+                }
+
+                // Regular character
+                _ => {
+                    current_arg.push(c);
+                }
+            }
+        }
+
+        // Don't forget the last argument
+        if !current_arg.is_empty() {
+            result.push(current_arg);
+        }
+
+        result
+    }
+
+    fn eval(&mut self) {
         let (command, args) = self.parse();
 
         if command.is_empty() {
@@ -109,32 +173,54 @@ impl Shell {
             "type" => self.cmd_type(args),
             "pwd" => self.cmd_pwd(),
             "cd" => self.cmd_cd(args),
-            "exit" => {}
+            "exit" => self.cmd_exit(args),
             _ => self.cmd_external(command, args),
         }
     }
 
+    // ===== Built-in Commands =====
+
+    fn cmd_exit(&self, args: &str) -> ! {
+        let parsed = Self::parse_arguments(args);
+        let code: i32 = parsed.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+        std::process::exit(code);
+    }
+
     fn cmd_echo(&self, args: &str) {
-        println!("{}", args);
+        let parsed = Self::parse_arguments(args);
+        println!("{}", parsed.join(" "));
     }
 
     fn cmd_type(&self, args: &str) {
-        let cmd = args.trim();
+        let parsed = Self::parse_arguments(args);
 
-        if self.builtins.contains(cmd) {
-            println!("{} is a shell builtin", cmd);
-        } else if let Some(path) = self.find_executable(cmd) {
-            println!("{} is {}", cmd, path);
-        } else {
-            println!("{}: not found", cmd);
+        for cmd in parsed {
+            if cmd.is_empty() {
+                continue;
+            }
+
+            if self.builtins.contains(cmd.as_str()) {
+                println!("{} is a shell builtin", cmd);
+            } else if let Some(path) = self.find_executable(&cmd) {
+                println!("{} is {}", cmd, path);
+            } else {
+                eprintln!("{}: not found", cmd);
+            }
         }
     }
 
     fn cmd_pwd(&self) {
-        println!("{}", env::current_dir().unwrap().display());
+        match env::current_dir() {
+            Ok(path) => println!("{}", path.display()),
+            Err(e) => eprintln!("pwd: {}", e),
+        }
     }
+
     fn cmd_cd(&self, args: &str) {
-        let path = match args.trim() {
+        let parsed = Self::parse_arguments(args);
+        let arg = parsed.first().map(|s| s.as_str()).unwrap_or("");
+
+        let path = match arg {
             "" | "~" => env::var("HOME")
                 .or_else(|_| env::var("USERPROFILE"))
                 .unwrap_or_default(),
@@ -159,26 +245,26 @@ impl Shell {
     }
 
     fn cmd_external(&self, command: &str, args: &str) {
-        if self.find_executable(command).is_some() {
-            let args: Vec<&str> = if args.is_empty() {
-                vec![]
-            } else {
-                args.split_whitespace().collect()
-            };
+        if let Some(path) = self.find_executable(command) {
+            let parsed = Self::parse_arguments(args);
 
-            let _ = ProcessCommand::new(command).args(&args).status();
+            match ProcessCommand::new(&path).args(&parsed).status() {
+                Ok(_) => {}
+                Err(e) => eprintln!("{}: {}", command, e),
+            }
         } else {
-            println!("{}: command not found", command);
+            eprintln!("{}: command not found", command);
         }
     }
+
+    // ===== Main Loop =====
 
     fn run(&mut self) {
         loop {
             self.print_prompt();
-            self.read();
 
-            let (command, _) = self.parse();
-            if command == "exit" {
+            if !self.read() {
+                println!();
                 break;
             }
 
