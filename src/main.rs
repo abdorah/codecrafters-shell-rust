@@ -94,7 +94,6 @@ impl Shell {
         message.split_once(' ').unwrap_or((message, ""))
     }
 
-    /// Parses arguments handling single quotes, double quotes, and escape sequences
     fn parse_arguments(args: &str) -> Vec<String> {
         let mut result = Vec::new();
         let mut current_arg = String::new();
@@ -104,7 +103,6 @@ impl Shell {
 
         while let Some(c) = chars.next() {
             match c {
-                // Escape sequences in double quotes
                 '\\' if in_double_quote => {
                     if let Some(&next) = chars.peek() {
                         match next {
@@ -121,24 +119,20 @@ impl Shell {
                     }
                 }
 
-                // Escape sequences outside quotes
                 '\\' if !in_single_quote => {
                     if let Some(next) = chars.next() {
                         current_arg.push(next);
                     }
                 }
 
-                // Single quote toggle (not inside double quotes)
                 '\'' if !in_double_quote => {
                     in_single_quote = !in_single_quote;
                 }
 
-                // Double quote toggle (not inside single quotes)
                 '"' if !in_single_quote => {
                     in_double_quote = !in_double_quote;
                 }
 
-                // Space outside quotes = argument separator
                 ' ' if !in_single_quote && !in_double_quote => {
                     if !current_arg.is_empty() {
                         result.push(current_arg.clone());
@@ -146,14 +140,12 @@ impl Shell {
                     }
                 }
 
-                // Regular character
                 _ => {
                     current_arg.push(c);
                 }
             }
         }
 
-        // Don't forget the last argument
         if !current_arg.is_empty() {
             result.push(current_arg);
         }
@@ -177,8 +169,6 @@ impl Shell {
             _ => self.cmd_external(command, args),
         }
     }
-
-    // ===== Built-in Commands =====
 
     fn cmd_exit(&self, args: &str) -> ! {
         let parsed = Self::parse_arguments(args);
@@ -245,10 +235,10 @@ impl Shell {
     }
 
     fn cmd_external(&self, command: &str, args: &str) {
-        if let Some(path) = self.find_executable(command) {
+        if self.find_executable(command).is_some() {
             let parsed = Self::parse_arguments(args);
 
-            match ProcessCommand::new(&path).args(&parsed).status() {
+            match ProcessCommand::new(command).args(&parsed).status() {
                 Ok(_) => {}
                 Err(e) => eprintln!("{}: {}", command, e),
             }
@@ -256,8 +246,6 @@ impl Shell {
             eprintln!("{}: command not found", command);
         }
     }
-
-    // ===== Main Loop =====
 
     fn run(&mut self) {
         loop {
