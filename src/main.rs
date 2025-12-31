@@ -89,9 +89,17 @@ impl Shell {
         }
     }
 
-    fn parse(&self) -> (&str, &str) {
-        let message = self.prompt.trim();
-        message.split_once(' ').unwrap_or((message, ""))
+    fn parse(&self) -> (String, Vec<String>) {
+        let parts = Self::parse_arguments(self.prompt.trim());
+
+        if parts.is_empty() {
+            return (String::new(), Vec::new());
+        }
+
+        let command = parts[0].clone();
+        let args = parts[1..].to_vec();
+
+        (command, args)
     }
 
     fn parse_arguments(args: &str) -> Vec<String> {
@@ -110,7 +118,6 @@ impl Shell {
                                 current_arg.push(chars.next().unwrap());
                             }
                             _ => {
-                                // Keep backslash for other characters
                                 current_arg.push('\\');
                             }
                         }
@@ -160,38 +167,37 @@ impl Shell {
             return;
         }
 
-        match command {
-            "echo" => self.cmd_echo(args),
-            "type" => self.cmd_type(args),
+        match command.as_str() {
+            // ← Fixed: convert String to &str
+            "echo" => self.cmd_echo(&args),
+            "type" => self.cmd_type(&args),
             "pwd" => self.cmd_pwd(),
-            "cd" => self.cmd_cd(args),
-            "exit" => self.cmd_exit(args),
-            _ => self.cmd_external(command, args),
+            "cd" => self.cmd_cd(&args),
+            "exit" => self.cmd_exit(&args),
+            _ => self.cmd_external(&command, &args),
         }
     }
 
-    fn cmd_exit(&self, args: &str) -> ! {
-        let parsed = Self::parse_arguments(args);
-        let code: i32 = parsed.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+    // ===== Built-in Commands =====
+
+    fn cmd_exit(&self, args: &[String]) -> ! {
+        let code: i32 = args.first().and_then(|s| s.parse().ok()).unwrap_or(0);
         std::process::exit(code);
     }
 
-    fn cmd_echo(&self, args: &str) {
-        let parsed = Self::parse_arguments(args);
-        println!("{}", parsed.join(" "));
+    fn cmd_echo(&self, args: &[String]) {
+        println!("{}", args.join(" "));
     }
 
-    fn cmd_type(&self, args: &str) {
-        let parsed = Self::parse_arguments(args);
-
-        for cmd in parsed {
+    fn cmd_type(&self, args: &[String]) {
+        for cmd in args {
             if cmd.is_empty() {
                 continue;
             }
 
             if self.builtins.contains(cmd.as_str()) {
                 println!("{} is a shell builtin", cmd);
-            } else if let Some(path) = self.find_executable(&cmd) {
+            } else if let Some(path) = self.find_executable(cmd) {
                 println!("{} is {}", cmd, path);
             } else {
                 eprintln!("{}: not found", cmd);
@@ -206,9 +212,8 @@ impl Shell {
         }
     }
 
-    fn cmd_cd(&self, args: &str) {
-        let parsed = Self::parse_arguments(args);
-        let arg = parsed.first().map(|s| s.as_str()).unwrap_or("");
+    fn cmd_cd(&self, args: &[String]) {
+        let arg = args.first().map(|s| s.as_str()).unwrap_or("");
 
         let path = match arg {
             "" | "~" => env::var("HOME")
@@ -234,16 +239,9 @@ impl Shell {
         }
     }
 
-    fn cmd_external(&self, command: &str, args: &str) {
-        let mut command = command.strip_suffix("'").unwrap_or(command);
-        command = command.strip_prefix("'").unwrap_or(command);
-        command = command.strip_suffix("\"").unwrap_or(command);
-        command = command.strip_prefix("\"").unwrap_or(command);
-
-        if self.find_executable(command).is_some() {
-            let parsed = Self::parse_arguments(args);
-
-            match ProcessCommand::new(command).args(&parsed).status() {
+    fn cmd_external(&self, command: &str, args: &[String]) {
+        if let Some(path) = self.find_executable(command) {
+            match ProcessCommand::new(&path).args(args).status() {
                 Ok(_) => {}
                 Err(e) => eprintln!("{}: {}", command, e),
             }
@@ -251,6 +249,8 @@ impl Shell {
             eprintln!("{}: command not found", command);
         }
     }
+
+    // ===== Main Loop =====
 
     fn run(&mut self) {
         loop {
