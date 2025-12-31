@@ -150,13 +150,13 @@ impl Shell {
             if expecting_file && !in_single_quote && !in_double_quote {
                 match c {
                     ' ' => {
-                        if !current_arg.is_empty() {
-                            if let Some(mut redirect) = current_redirect.take() {
-                                redirect.file = current_arg.clone();
-                                result.redirects.push(redirect);
-                                current_arg.clear();
-                                expecting_file = false;
-                            }
+                        if !current_arg.is_empty()
+                            && let Some(mut redirect) = current_redirect.take()
+                        {
+                            redirect.file = current_arg.clone();
+                            result.redirects.push(redirect);
+                            current_arg.clear();
+                            expecting_file = false;
                         }
                         continue;
                     }
@@ -333,11 +333,11 @@ impl Shell {
 
     fn write_output(&self, message: &str, parsed: &ParsedCommand) {
         for redirect in &parsed.redirects {
-            if matches!(redirect.stream, StreamType::Stdout) {
-                if let Ok(mut file) = Self::open_redirect_file(redirect) {
-                    let _ = writeln!(file, "{}", message);
-                    return;
-                }
+            if matches!(redirect.stream, StreamType::Stdout)
+                && let Ok(mut file) = Self::open_redirect_file(redirect)
+            {
+                let _ = writeln!(file, "{}", message);
+                return;
             }
         }
         println!("{}", message);
@@ -345,11 +345,11 @@ impl Shell {
 
     fn write_error(&self, message: &str, parsed: &ParsedCommand) {
         for redirect in &parsed.redirects {
-            if matches!(redirect.stream, StreamType::Stderr) {
-                if let Ok(mut file) = Self::open_redirect_file(redirect) {
-                    let _ = writeln!(file, "{}", message);
-                    return;
-                }
+            if matches!(redirect.stream, StreamType::Stderr)
+                && let Ok(mut file) = Self::open_redirect_file(redirect)
+            {
+                let _ = writeln!(file, "{}", message);
+                return;
             }
         }
         eprintln!("{}", message);
