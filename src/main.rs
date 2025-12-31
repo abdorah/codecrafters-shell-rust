@@ -233,8 +233,8 @@ impl Shell {
     }
 
     fn cmd_external(&self, command: &str, args: &[String]) {
-        if let Some(path) = self.find_executable(command) {
-            match ProcessCommand::new(&path).args(args).status() {
+        if self.find_executable(command).is_some() {
+            match ProcessCommand::new(command).args(args).status() {
                 Ok(_) => {}
                 Err(e) => eprintln!("{}: {}", command, e),
             }
