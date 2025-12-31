@@ -112,15 +112,8 @@ impl Shell {
         while let Some(c) = chars.next() {
             match c {
                 '\\' if in_double_quote => {
-                    if let Some(&next) = chars.peek() {
-                        match next {
-                            '"' | '\\' | '$' | '`' => {
-                                current_arg.push(chars.next().unwrap());
-                            }
-                            _ => {
-                                current_arg.push('\\');
-                            }
-                        }
+                    if let Some('"' | '\\' | '$' | '`') = chars.peek() {
+                        current_arg.push(chars.next().unwrap());
                     } else {
                         current_arg.push('\\');
                     }
