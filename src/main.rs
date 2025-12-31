@@ -235,6 +235,11 @@ impl Shell {
     }
 
     fn cmd_external(&self, command: &str, args: &str) {
+        let mut command = command.strip_suffix("'").unwrap_or(command);
+        command = command.strip_prefix("'").unwrap_or(command);
+        command = command.strip_suffix("\"").unwrap_or(command);
+        command = command.strip_prefix("\"").unwrap_or(command);
+
         if self.find_executable(command).is_some() {
             let parsed = Self::parse_arguments(args);
 
