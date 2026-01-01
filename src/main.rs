@@ -291,8 +291,7 @@ impl Shell {
     fn open_redirect_file(redirect: &Redirect) -> io::Result<File> {
         if redirect.append {
             OpenOptions::new()
-                .create(true)
-                .append(true)
+                .append(redirect.append)
                 .open(&redirect.file)
         } else {
             File::create(&redirect.file)
