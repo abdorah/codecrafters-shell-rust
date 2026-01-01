@@ -291,7 +291,8 @@ impl Shell {
     fn open_redirect_file(redirect: &Redirect) -> io::Result<File> {
         if redirect.append {
             OpenOptions::new()
-                .append(redirect.append)
+                .create(true)
+                .append(true)
                 .open(&redirect.file)
         } else {
             File::create(&redirect.file)
@@ -303,6 +304,10 @@ impl Shell {
 
         if command.is_empty() {
             return;
+        }
+
+        for redirect in &parsed.redirects {
+            let _ = Self::open_redirect_file(redirect);
         }
 
         match command.as_str() {
