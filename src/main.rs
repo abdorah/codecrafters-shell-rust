@@ -141,12 +141,10 @@ impl Shell {
         let mut in_double_quote = false;
         let mut chars = input.chars().peekable();
 
-        // State for redirection
         let mut expecting_file = false;
         let mut current_redirect: Option<Redirect> = None;
 
         while let Some(c) = chars.next() {
-            // If we're expecting a filename for redirect
             if expecting_file && !in_single_quote && !in_double_quote {
                 match c {
                     ' ' => {
@@ -198,19 +196,17 @@ impl Shell {
                     in_double_quote = !in_double_quote;
                 }
 
-                // Redirection: 2>> or 2>
                 '2' if !in_single_quote && !in_double_quote => {
                     if chars.peek() == Some(&'>') {
-                        // Save current arg if any
                         if !current_arg.is_empty() {
                             result.args.push(current_arg.clone());
                             current_arg.clear();
                         }
 
-                        chars.next(); // consume first '>'
+                        chars.next();
                         let append = chars.peek() == Some(&'>');
                         if append {
-                            chars.next(); // consume second '>'
+                            chars.next();
                         }
 
                         current_redirect = Some(Redirect {
@@ -224,7 +220,6 @@ impl Shell {
                     }
                 }
 
-                // Redirection: 1>> or 1> or >> or >
                 '1' if !in_single_quote && !in_double_quote => {
                     if chars.peek() == Some(&'>') {
                         if !current_arg.is_empty() {
@@ -232,7 +227,7 @@ impl Shell {
                             current_arg.clear();
                         }
 
-                        chars.next(); // consume first '>'
+                        chars.next();
                         let append = chars.peek() == Some(&'>');
                         if append {
                             chars.next();
@@ -281,7 +276,6 @@ impl Shell {
             }
         }
 
-        // Handle remaining content
         if !current_arg.is_empty() {
             if let Some(mut redirect) = current_redirect.take() {
                 redirect.file = current_arg;
