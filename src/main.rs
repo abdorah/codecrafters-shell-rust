@@ -457,7 +457,7 @@ impl Shell {
         // Check builtins
         for builtin in &self.builtins {
             if builtin.starts_with(partial) {
-                completions.push(builtin.to_string());
+                completions.push(format!("{builtin} "));
             }
         }
 
@@ -481,7 +481,7 @@ impl Shell {
                         if name_without_ext.starts_with(partial)
                             && Self::is_executable(&entry.path())
                         {
-                            completions.push(name_without_ext.to_string());
+                            completions.push(format!("{name_without_ext} "));
                         }
                     }
                 }
