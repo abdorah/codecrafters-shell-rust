@@ -38,7 +38,6 @@ struct Shell {
     prompt: String,
     paths: Vec<String>,
     builtins: HashSet<&'static str>,
-    last_suggestions: Vec<String>,
 }
 
 impl Shell {
@@ -46,8 +45,7 @@ impl Shell {
         Shell {
             prompt: String::new(),
             paths: Self::parse_path(),
-            builtins: HashSet::from(["echo", "exit", "type", "pwd", "cd", "help"]),
-            last_suggestions: Vec::new(),
+            builtins: HashSet::from(["echo", "exit", "type", "pwd", "cd"]),
         }
     }
 
@@ -106,6 +104,64 @@ impl Shell {
         None
     }
 
+    /// Find single completion for a partial command
+    fn find_completion(&self, partial: &str) -> Option<String> {
+        if partial.is_empty() {
+            return None;
+        }
+
+        // Check builtins first
+        let mut matches: Vec<String> = self
+            .builtins
+            .iter()
+            .filter(|cmd| cmd.starts_with(partial))
+            .map(|s| s.to_string())
+            .collect();
+
+        // Check executables in PATH
+        for dir in &self.paths {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    if let Ok(file_name) = entry.file_name().into_string()
+                        && file_name.starts_with(partial) && Self::is_executable(&entry.path()) {
+                            matches.push(file_name);
+                        }
+                }
+            }
+        }
+
+        matches.sort();
+        matches.dedup();
+
+        // Return single match, or None if ambiguous/none
+        if matches.len() == 1 {
+            Some(matches[0].clone())
+        } else {
+            None
+        }
+    }
+
+    /// Auto-complete command if it ends with tab character
+    fn auto_complete_if_tab(&mut self) {
+        let trimmed = self.prompt.trim_end();
+
+        // Check if ends with tab (user typed tab before Enter)
+        if trimmed.ends_with('\t') {
+            let without_tab = trimmed.trim_end_matches('\t');
+
+            // Get the first word (command)
+            let parts: Vec<&str> = without_tab.split_whitespace().collect();
+            if let Some(partial_cmd) = parts.first()
+                && let Some(completed) = self.find_completion(partial_cmd) {
+                    // Replace partial command with completed version
+                    let rest = without_tab.strip_prefix(partial_cmd).unwrap_or("");
+                    self.prompt = format!("{}{}", completed, rest);
+
+                    println!("\r\x1B[K$ {} (completed)", self.prompt.trim());
+                }
+        }
+    }
+
     fn print_prompt(&self) {
         print!("$ ");
         let _ = io::stdout().flush();
@@ -115,55 +171,12 @@ impl Shell {
         self.prompt.clear();
         match io::stdin().read_line(&mut self.prompt) {
             Ok(0) => false,
-            Ok(_) => true,
+            Ok(_) => {
+                // Auto-complete if tab was in the input
+                self.auto_complete_if_tab();
+                true
+            }
             Err(_) => false,
-        }
-    }
-
-    fn find_completions(&self, partial: &str) -> Vec<String> {
-        if partial.is_empty() {
-            return Vec::new();
-        }
-
-        let mut completions = Vec::new();
-
-        for builtin in &self.builtins {
-            if builtin.starts_with(partial) {
-                completions.push(builtin.to_string());
-            }
-        }
-
-        for dir in &self.paths {
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    if let Ok(file_name) = entry.file_name().into_string()
-                        && file_name.starts_with(partial)
-                        && Self::is_executable(&entry.path())
-                    {
-                        completions.push(file_name);
-                    }
-                }
-            }
-        }
-
-        completions.sort();
-        completions.dedup();
-        completions
-    }
-
-    fn suggest_command(&mut self, cmd: &str) {
-        let suggestions = self.find_completions(cmd);
-
-        if !suggestions.is_empty() {
-            eprintln!("{}: command not found", cmd);
-            eprintln!("\nDid you mean one of these?");
-            for (i, suggestion) in suggestions.iter().take(5).enumerate() {
-                eprintln!("  {}. {}", i + 1, suggestion);
-            }
-            self.last_suggestions = suggestions;
-        } else {
-            eprintln!("{}: command not found", cmd);
-            self.last_suggestions.clear();
         }
     }
 
@@ -198,13 +211,12 @@ impl Shell {
                 match c {
                     ' ' => {
                         if !current_arg.is_empty()
-                            && let Some(mut redirect) = current_redirect.take()
-                        {
-                            redirect.file = current_arg.clone();
-                            result.redirects.push(redirect);
-                            current_arg.clear();
-                            expecting_file = false;
-                        }
+                            && let Some(mut redirect) = current_redirect.take() {
+                                redirect.file = current_arg.clone();
+                                result.redirects.push(redirect);
+                                current_arg.clear();
+                                expecting_file = false;
+                            }
                         continue;
                     }
                     '\'' => {
@@ -355,6 +367,7 @@ impl Shell {
             return;
         }
 
+        // Pre-create redirect files
         for redirect in &parsed.redirects {
             let _ = Self::open_redirect_file(redirect);
         }
@@ -365,8 +378,6 @@ impl Shell {
             "pwd" => self.cmd_pwd(&parsed),
             "cd" => self.cmd_cd(&parsed),
             "exit" => self.cmd_exit(&parsed),
-            "help" => self.cmd_help(),
-            "?" => self.cmd_show_suggestions(),
             _ => self.cmd_external(&command, &parsed),
         }
     }
@@ -376,11 +387,10 @@ impl Shell {
     fn write_output(&self, message: &str, parsed: &ParsedCommand) {
         for redirect in &parsed.redirects {
             if matches!(redirect.stream, StreamType::Stdout)
-                && let Ok(mut file) = Self::open_redirect_file(redirect)
-            {
-                let _ = writeln!(file, "{}", message);
-                return;
-            }
+                && let Ok(mut file) = Self::open_redirect_file(redirect) {
+                    let _ = writeln!(file, "{}", message);
+                    return;
+                }
         }
         println!("{}", message);
     }
@@ -388,11 +398,10 @@ impl Shell {
     fn write_error(&self, message: &str, parsed: &ParsedCommand) {
         for redirect in &parsed.redirects {
             if matches!(redirect.stream, StreamType::Stderr)
-                && let Ok(mut file) = Self::open_redirect_file(redirect)
-            {
-                let _ = writeln!(file, "{}", message);
-                return;
-            }
+                && let Ok(mut file) = Self::open_redirect_file(redirect) {
+                    let _ = writeln!(file, "{}", message);
+                    return;
+                }
         }
         eprintln!("{}", message);
     }
@@ -466,27 +475,7 @@ impl Shell {
         }
     }
 
-    fn cmd_help(&self) {
-        println!("Available commands:");
-        println!("  Built-ins: echo, exit, type, pwd, cd, help");
-        println!();
-        println!("Tips:");
-        println!("  - Type '?' to see suggestions from last error");
-        println!("  - Partial commands show suggestions when not found");
-    }
-
-    fn cmd_show_suggestions(&self) {
-        if self.last_suggestions.is_empty() {
-            println!("No suggestions available.");
-        } else {
-            println!("Available commands:");
-            for (i, cmd) in self.last_suggestions.iter().enumerate() {
-                println!("  {}. {}", i + 1, cmd);
-            }
-        }
-    }
-
-    fn cmd_external(&mut self, command: &str, parsed: &ParsedCommand) {
+    fn cmd_external(&self, command: &str, parsed: &ParsedCommand) {
         if let Some(path) = self.find_executable(command) {
             let mut cmd = ProcessCommand::new(&path);
             cmd.args(&parsed.args);
@@ -511,13 +500,15 @@ impl Shell {
                 Err(e) => self.write_error(&format!("{}: {}", command, e), parsed),
             }
         } else {
-            self.suggest_command(command);
+            self.write_error(&format!("{}: command not found", command), parsed);
         }
     }
 
     // ===== Main Loop =====
 
     fn run(&mut self) {
+        println!("Simple Shell (Type command + TAB + ENTER for completion)");
+
         loop {
             self.print_prompt();
 
