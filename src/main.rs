@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::env;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::Path;
 use std::process::{Command as ProcessCommand, Stdio};
 
@@ -72,17 +72,17 @@ mod terminal {
     impl RawMode {
         pub fn enable() -> io::Result<Self> {
             unsafe {
-                let handle = GetStdHandle(STD_INPUT_HANDLE).map_err(|e| io::Error::other(e))?;
+                let handle = GetStdHandle(STD_INPUT_HANDLE).map_err(io::Error::other)?;
 
                 let mut original_mode = CONSOLE_MODE::default();
-                GetConsoleMode(handle, &mut original_mode).map_err(|e| io::Error::other(e))?;
+                GetConsoleMode(handle, &mut original_mode).map_err(io::Error::other)?;
 
                 // Disable line input and echo
                 let mut new_mode = original_mode;
                 new_mode &= !(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
                 new_mode |= ENABLE_PROCESSED_INPUT;
 
-                SetConsoleMode(handle, new_mode).map_err(|e| io::Error::other(e))?;
+                SetConsoleMode(handle, new_mode).map_err(io::Error::other)?;
 
                 Ok(RawMode {
                     handle,
@@ -191,12 +191,12 @@ fn read_key() -> io::Result<Option<Key>> {
     };
 
     unsafe {
-        let handle = GetStdHandle(STD_INPUT_HANDLE).map_err(|e| io::Error::other(e))?;
+        let handle = GetStdHandle(STD_INPUT_HANDLE).map_err(io::Error::other)?;
 
         let mut buffer = [INPUT_RECORD::default()];
         let mut read = 0u32;
 
-        ReadConsoleInputW(handle, &mut buffer, &mut read).map_err(|e| io::Error::other(e))?;
+        ReadConsoleInputW(handle, &mut buffer, &mut read).map_err(io::Error::other)?;
 
         if buffer[0].EventType == KEY_EVENT as u16 {
             let event = buffer[0].Event.KeyEvent;
@@ -207,7 +207,7 @@ fn read_key() -> io::Result<Option<Key>> {
             }
 
             let key_code = VIRTUAL_KEY(event.wVirtualKeyCode);
-            let char_code = unsafe { event.uChar.UnicodeChar };
+            let char_code = event.uChar.UnicodeChar;
             let ctrl_pressed = event.dwControlKeyState & 0x000F != 0;
 
             let key = match key_code {
