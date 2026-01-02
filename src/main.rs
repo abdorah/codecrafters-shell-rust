@@ -961,14 +961,6 @@ impl Shell {
     }
 
     fn run(&mut self) -> io::Result<()> {
-        println!("Cross-Platform Shell with Tab Completion");
-        println!(
-            "Using: {} crate",
-            if cfg!(windows) { "windows-rs" } else { "libc" }
-        );
-        println!("Commands: echo, type, pwd, cd, exit");
-        println!();
-
         loop {
             if !self.read_line()? {
                 break;
