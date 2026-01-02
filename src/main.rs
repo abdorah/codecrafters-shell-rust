@@ -518,8 +518,6 @@ impl Shell {
     // ===== Main Loop =====
 
     fn run(&mut self) {
-        println!("Simple Shell - Type 'help' for commands");
-
         loop {
             self.print_prompt();
 
