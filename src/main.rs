@@ -932,8 +932,8 @@ impl Shell {
     }
 
     fn cmd_external(&self, command: &str, parsed: &ParsedCommand) {
-        if let Some(path) = self.find_executable(command) {
-            let mut cmd = ProcessCommand::new(&path);
+        if self.find_executable(command).is_some() {
+            let mut cmd = ProcessCommand::new(command);
             cmd.args(&parsed.args);
 
             for redirect in &parsed.redirects {
