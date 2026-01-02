@@ -123,9 +123,11 @@ impl Shell {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     if let Ok(file_name) = entry.file_name().into_string()
-                        && file_name.starts_with(partial) && Self::is_executable(&entry.path()) {
-                            matches.push(file_name);
-                        }
+                        && file_name.starts_with(partial)
+                        && Self::is_executable(&entry.path())
+                    {
+                        matches.push(file_name);
+                    }
                 }
             }
         }
@@ -152,13 +154,14 @@ impl Shell {
             // Get the first word (command)
             let parts: Vec<&str> = without_tab.split_whitespace().collect();
             if let Some(partial_cmd) = parts.first()
-                && let Some(completed) = self.find_completion(partial_cmd) {
-                    // Replace partial command with completed version
-                    let rest = without_tab.strip_prefix(partial_cmd).unwrap_or("");
-                    self.prompt = format!("{}{}", completed, rest);
+                && let Some(completed) = self.find_completion(partial_cmd)
+            {
+                // Replace partial command with completed version
+                let rest = without_tab.strip_prefix(partial_cmd).unwrap_or("");
+                self.prompt = format!("{}{}", completed, rest);
 
-                    println!("\r\x1B[K$ {} (completed)", self.prompt.trim());
-                }
+                println!("\r\x1B[K$ {} (completed)", self.prompt.trim());
+            }
         }
     }
 
@@ -211,12 +214,13 @@ impl Shell {
                 match c {
                     ' ' => {
                         if !current_arg.is_empty()
-                            && let Some(mut redirect) = current_redirect.take() {
-                                redirect.file = current_arg.clone();
-                                result.redirects.push(redirect);
-                                current_arg.clear();
-                                expecting_file = false;
-                            }
+                            && let Some(mut redirect) = current_redirect.take()
+                        {
+                            redirect.file = current_arg.clone();
+                            result.redirects.push(redirect);
+                            current_arg.clear();
+                            expecting_file = false;
+                        }
                         continue;
                     }
                     '\'' => {
@@ -387,10 +391,11 @@ impl Shell {
     fn write_output(&self, message: &str, parsed: &ParsedCommand) {
         for redirect in &parsed.redirects {
             if matches!(redirect.stream, StreamType::Stdout)
-                && let Ok(mut file) = Self::open_redirect_file(redirect) {
-                    let _ = writeln!(file, "{}", message);
-                    return;
-                }
+                && let Ok(mut file) = Self::open_redirect_file(redirect)
+            {
+                let _ = writeln!(file, "{}", message);
+                return;
+            }
         }
         println!("{}", message);
     }
@@ -398,10 +403,11 @@ impl Shell {
     fn write_error(&self, message: &str, parsed: &ParsedCommand) {
         for redirect in &parsed.redirects {
             if matches!(redirect.stream, StreamType::Stderr)
-                && let Ok(mut file) = Self::open_redirect_file(redirect) {
-                    let _ = writeln!(file, "{}", message);
-                    return;
-                }
+                && let Ok(mut file) = Self::open_redirect_file(redirect)
+            {
+                let _ = writeln!(file, "{}", message);
+                return;
+            }
         }
         eprintln!("{}", message);
     }
@@ -507,8 +513,6 @@ impl Shell {
     // ===== Main Loop =====
 
     fn run(&mut self) {
-        println!("Simple Shell (Type command + TAB + ENTER for completion)");
-
         loop {
             self.print_prompt();
 
