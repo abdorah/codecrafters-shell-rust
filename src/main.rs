@@ -38,6 +38,7 @@ struct Shell {
     prompt: String,
     paths: Vec<String>,
     builtins: HashSet<&'static str>,
+    last_suggestions: Vec<String>,
 }
 
 impl Shell {
@@ -45,7 +46,8 @@ impl Shell {
         Shell {
             prompt: String::new(),
             paths: Self::parse_path(),
-            builtins: HashSet::from(["echo", "exit", "type", "pwd", "cd"]),
+            builtins: HashSet::from(["echo", "exit", "type", "pwd", "cd", "help"]),
+            last_suggestions: Vec::new(),
         }
     }
 
@@ -115,6 +117,53 @@ impl Shell {
             Ok(0) => false,
             Ok(_) => true,
             Err(_) => false,
+        }
+    }
+
+    fn find_completions(&self, partial: &str) -> Vec<String> {
+        if partial.is_empty() {
+            return Vec::new();
+        }
+
+        let mut completions = Vec::new();
+
+        for builtin in &self.builtins {
+            if builtin.starts_with(partial) {
+                completions.push(builtin.to_string());
+            }
+        }
+
+        for dir in &self.paths {
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    if let Ok(file_name) = entry.file_name().into_string()
+                        && file_name.starts_with(partial)
+                        && Self::is_executable(&entry.path())
+                    {
+                        completions.push(file_name);
+                    }
+                }
+            }
+        }
+
+        completions.sort();
+        completions.dedup();
+        completions
+    }
+
+    fn suggest_command(&mut self, cmd: &str) {
+        let suggestions = self.find_completions(cmd);
+
+        if !suggestions.is_empty() {
+            eprintln!("{}: command not found", cmd);
+            eprintln!("\nDid you mean one of these?");
+            for (i, suggestion) in suggestions.iter().take(5).enumerate() {
+                eprintln!("  {}. {}", i + 1, suggestion);
+            }
+            self.last_suggestions = suggestions;
+        } else {
+            eprintln!("{}: command not found", cmd);
+            self.last_suggestions.clear();
         }
     }
 
@@ -316,6 +365,8 @@ impl Shell {
             "pwd" => self.cmd_pwd(&parsed),
             "cd" => self.cmd_cd(&parsed),
             "exit" => self.cmd_exit(&parsed),
+            "help" => self.cmd_help(),
+            "?" => self.cmd_show_suggestions(),
             _ => self.cmd_external(&command, &parsed),
         }
     }
@@ -415,12 +466,31 @@ impl Shell {
         }
     }
 
-    fn cmd_external(&self, command: &str, parsed: &ParsedCommand) {
-        if self.find_executable(command).is_some() {
-            let mut cmd = ProcessCommand::new(command);
+    fn cmd_help(&self) {
+        println!("Available commands:");
+        println!("  Built-ins: echo, exit, type, pwd, cd, help");
+        println!();
+        println!("Tips:");
+        println!("  - Type '?' to see suggestions from last error");
+        println!("  - Partial commands show suggestions when not found");
+    }
+
+    fn cmd_show_suggestions(&self) {
+        if self.last_suggestions.is_empty() {
+            println!("No suggestions available.");
+        } else {
+            println!("Available commands:");
+            for (i, cmd) in self.last_suggestions.iter().enumerate() {
+                println!("  {}. {}", i + 1, cmd);
+            }
+        }
+    }
+
+    fn cmd_external(&mut self, command: &str, parsed: &ParsedCommand) {
+        if let Some(path) = self.find_executable(command) {
+            let mut cmd = ProcessCommand::new(&path);
             cmd.args(&parsed.args);
 
-            // Setup redirections
             for redirect in &parsed.redirects {
                 match redirect.stream {
                     StreamType::Stdout => {
@@ -441,13 +511,15 @@ impl Shell {
                 Err(e) => self.write_error(&format!("{}: {}", command, e), parsed),
             }
         } else {
-            self.write_error(&format!("{}: command not found", command), parsed);
+            self.suggest_command(command);
         }
     }
 
     // ===== Main Loop =====
 
     fn run(&mut self) {
+        println!("Simple Shell - Type 'help' for commands");
+
         loop {
             self.print_prompt();
 
