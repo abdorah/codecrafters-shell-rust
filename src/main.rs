@@ -511,28 +511,32 @@ impl Shell {
         let _ = io::stdout().flush();
     }
 
+    fn handle_double_tab(&mut self) {
+        if let Some((start, end, word)) = self.editor.get_word_at_cursor() {
+            let completions = self.find_completions(word);
+            let common = Self::common_prefix(&completions);
+            if common.len() > word.len() {
+                self.editor.replace_word(start, end, &common);
+                self.redraw_line();
+            } else {
+                self.show_completions(&completions);
+                self.redraw_line();
+            }
+        }
+    }
+
     fn handle_tab(&mut self) {
         if let Some((start, end, word)) = self.editor.get_word_at_cursor() {
             let completions = self.find_completions(word);
 
             match completions.len() {
-                0 => {
-                    print!("\x07");
-                    let _ = io::stdout().flush();
-                }
                 1 => {
                     self.editor.replace_word(start, end, &completions[0]);
                     self.redraw_line();
                 }
                 _ => {
-                    let common = Self::common_prefix(&completions);
-                    if common.len() > word.len() {
-                        self.editor.replace_word(start, end, &common);
-                        self.redraw_line();
-                    } else {
-                        self.show_completions(&completions);
-                        self.redraw_line();
-                    }
+                    print!("\x07");
+                    let _ = io::stdout().flush();
                 }
             }
         }
@@ -565,7 +569,7 @@ impl Shell {
         self.print_prompt();
 
         let _raw = RawMode::enable()?;
-
+        let mut double_tab = false;
         loop {
             match read_key()? {
                 None => continue,
@@ -573,7 +577,14 @@ impl Shell {
                     println!();
                     return Ok(true);
                 }
-                Some(Key::Tab) => self.handle_tab(),
+                Some(Key::Tab) => {
+                    if !double_tab {
+                        self.handle_tab();
+                        double_tab = true;
+                    } else {
+                        self.handle_double_tab();
+                    }
+                }
                 Some(Key::Backspace) => {
                     self.editor.backspace();
                     self.redraw_line();
