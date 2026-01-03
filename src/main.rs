@@ -520,8 +520,6 @@ impl Shell {
             let common = Self::common_prefix(&completions);
             if common.len() > word.len() {
                 self.editor.replace_word(start, end, &common);
-                self.redraw_line();
-            } else {
                 self.show_completions(&completions);
                 self.redraw_line();
             }
