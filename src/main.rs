@@ -77,7 +77,6 @@ mod terminal {
                 let mut original_mode = CONSOLE_MODE::default();
                 GetConsoleMode(handle, &mut original_mode).map_err(io::Error::other)?;
 
-                // Disable line input and echo
                 let mut new_mode = original_mode;
                 new_mode &= !(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
                 new_mode |= ENABLE_PROCESSED_INPUT;
@@ -135,7 +134,7 @@ fn read_key() -> io::Result<Option<Key>> {
     let mut buf = [0u8; 1];
 
     if stdin.read(&mut buf)? == 0 {
-        return Ok(None); // Timeout
+        return Ok(None);
     }
 
     let key = match buf[0] {
@@ -147,7 +146,6 @@ fn read_key() -> io::Result<Option<Key>> {
         0x01 => Key::CtrlA,
         0x05 => Key::CtrlE,
         0x1b => {
-            // Escape sequence
             let mut seq = [0u8; 2];
             if stdin.read(&mut seq[0..1])? > 0 && seq[0] == b'[' {
                 if stdin.read(&mut seq[1..2])? > 0 {
@@ -159,7 +157,6 @@ fn read_key() -> io::Result<Option<Key>> {
                         b'H' => Key::Home,
                         b'F' => Key::End,
                         b'3' => {
-                            // Delete key
                             let mut tilde = [0u8; 1];
                             let _ = stdin.read(&mut tilde);
                             Key::Delete
@@ -201,7 +198,6 @@ fn read_key() -> io::Result<Option<Key>> {
         if buffer[0].EventType == KEY_EVENT as u16 {
             let event = buffer[0].Event.KeyEvent;
 
-            // Only process key down events
             if !event.bKeyDown.as_bool() {
                 return Ok(None);
             }
@@ -221,16 +217,13 @@ fn read_key() -> io::Result<Option<Key>> {
                 VK_DOWN => Key::Down,
                 VK_HOME => Key::Home,
                 VK_END => Key::End,
-                _ if ctrl_pressed => {
-                    // Handle Ctrl combinations
-                    match char_code as u8 {
-                        3 => Key::CtrlC, // Ctrl+C
-                        4 => Key::CtrlD, // Ctrl+D
-                        1 => Key::CtrlA, // Ctrl+A
-                        5 => Key::CtrlE, // Ctrl+E
-                        _ => Key::Unknown,
-                    }
-                }
+                _ if ctrl_pressed => match char_code as u8 {
+                    3 => Key::CtrlC,
+                    4 => Key::CtrlD,
+                    1 => Key::CtrlA,
+                    5 => Key::CtrlE,
+                    _ => Key::Unknown,
+                },
                 _ => {
                     if char_code > 0 && char_code < 128 {
                         let ch = char::from_u32(char_code as u32).unwrap_or('\0');
@@ -321,12 +314,10 @@ impl LineEditor {
         let mut start = self.cursor.min(self.buffer.len().saturating_sub(1));
         let mut end = self.cursor;
 
-        // Find start of word
         while start > 0 && !bytes[start - 1].is_ascii_whitespace() {
             start -= 1;
         }
 
-        // Find end of word
         while end < self.buffer.len() && !bytes[end].is_ascii_whitespace() {
             end += 1;
         }
@@ -454,19 +445,16 @@ impl Shell {
 
         let mut completions = Vec::new();
 
-        // Check builtins
         for builtin in &self.builtins {
             if builtin.starts_with(partial) {
                 completions.push(format!("{builtin} "));
             }
         }
 
-        // Check executables in PATH
         for dir in &self.paths {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     if let Ok(file_name) = entry.file_name().into_string() {
-                        // Remove extension for comparison on Windows
                         let name_without_ext = if cfg!(windows) {
                             file_name
                                 .strip_suffix(".exe")
@@ -501,11 +489,10 @@ impl Shell {
     fn redraw_line(&self) {
         print!("\r\x1B[K$ {}", self.editor.buffer);
 
-        // Move cursor to correct position
         let pos = self.editor.cursor;
         let line_len = self.editor.buffer.len();
         if pos < line_len {
-            print!("\r\x1B[{}C", pos + 2); // +2 for "$ "
+            print!("\r\x1B[{}C", pos + 2);
         }
 
         let _ = io::stdout().flush();
@@ -514,10 +501,10 @@ impl Shell {
     fn show_completions(&self, completions: &[String]) {
         println!();
         for completion in completions.iter().take(10) {
-            println!("  {}", completion);
+            print!("  {}", completion);
         }
         if completions.len() > 10 {
-            println!("  ... and {} more", completions.len() - 10);
+            print!("  ... and {} more", completions.len() - 10);
         }
         self.print_prompt();
         print!("{}", self.editor.buffer);
@@ -530,17 +517,14 @@ impl Shell {
 
             match completions.len() {
                 0 => {
-                    // No completions - beep
                     print!("\x07");
                     let _ = io::stdout().flush();
                 }
                 1 => {
-                    // Single completion - apply it
                     self.editor.replace_word(start, end, &completions[0]);
                     self.redraw_line();
                 }
                 _ => {
-                    // Multiple completions
                     let common = Self::common_prefix(&completions);
                     if common.len() > word.len() {
                         self.editor.replace_word(start, end, &common);
@@ -825,7 +809,6 @@ impl Shell {
             return;
         }
 
-        // Pre-create redirect files
         for redirect in &parsed.redirects {
             let _ = Self::open_redirect_file(redirect);
         }
