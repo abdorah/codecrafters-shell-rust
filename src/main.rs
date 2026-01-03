@@ -5,6 +5,9 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::{Command as ProcessCommand, Stdio};
 
+#[cfg(unix)]
+use std::io::Read;
+
 // ============================================
 // TERMINAL RAW MODE - UNIX
 // ============================================
@@ -583,29 +586,36 @@ impl Shell {
                         double_tab = true;
                     } else {
                         self.handle_double_tab();
+                        double_tab = false;
                     }
                 }
                 Some(Key::Backspace) => {
+                    double_tab = false;
                     self.editor.backspace();
                     self.redraw_line();
                 }
                 Some(Key::Delete) => {
+                    double_tab = false;
                     self.editor.delete();
                     self.redraw_line();
                 }
                 Some(Key::Left) => {
+                    double_tab = false;
                     self.editor.move_left();
                     self.redraw_line();
                 }
                 Some(Key::Right) => {
+                    double_tab = false;
                     self.editor.move_right();
                     self.redraw_line();
                 }
                 Some(Key::Home) | Some(Key::CtrlA) => {
+                    double_tab = false;
                     self.editor.move_home();
                     self.redraw_line();
                 }
                 Some(Key::End) | Some(Key::CtrlE) => {
+                    double_tab = false;
                     self.editor.move_end();
                     self.redraw_line();
                 }
@@ -615,19 +625,24 @@ impl Shell {
                     return Ok(true);
                 }
                 Some(Key::CtrlD) => {
+                    double_tab = false;
                     if self.editor.buffer.is_empty() {
                         println!();
                         return Ok(false);
                     }
                 }
                 Some(Key::Char(ch)) => {
+                    double_tab = false;
                     self.editor.insert(ch);
                     self.redraw_line();
                 }
                 Some(Key::Up) | Some(Key::Down) => {
+                    double_tab = false;
                     // Could implement history here
                 }
-                Some(Key::Unknown) => {}
+                Some(Key::Unknown) => {
+                    double_tab = false;
+                }
             }
         }
     }
