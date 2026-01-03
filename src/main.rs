@@ -520,6 +520,7 @@ impl Shell {
             let common = Self::common_prefix(&completions);
             self.editor.replace_word(start, end, &common);
             self.show_completions(&completions);
+            self.redraw_line();
         }
     }
 
