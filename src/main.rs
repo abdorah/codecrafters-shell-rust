@@ -502,9 +502,12 @@ impl Shell {
     }
 
     fn show_completions(&self, completions: &[String]) {
+        println!();
         for completion in completions.iter().take(10) {
             print!("  {}", completion);
         }
+        self.print_prompt();
+        print!("{}", self.editor.buffer);
         let _ = io::stdout().flush();
     }
 
