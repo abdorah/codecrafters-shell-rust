@@ -503,23 +503,18 @@ impl Shell {
 
     fn show_completions(&self, completions: &[String]) {
         println!();
-        for completion in completions.iter().take(10) {
-            print!("  {}", completion);
-        }
+        println!("{}", completions.join("  "));
         self.print_prompt();
         print!("{}", self.editor.buffer);
         let _ = io::stdout().flush();
     }
 
     fn handle_double_tab(&mut self) {
-        if let Some((start, end, word)) = self.editor.get_word_at_cursor() {
+        if let Some((_, _, word)) = self.editor.get_word_at_cursor() {
             let completions = self.find_completions(word);
-            let common = Self::common_prefix(&completions);
             self.show_completions(&completions);
-            self.redraw_line();
         }
     }
-
     fn handle_tab(&mut self) {
         if let Some((start, end, word)) = self.editor.get_word_at_cursor() {
             let completions = self.find_completions(word);
@@ -535,26 +530,6 @@ impl Shell {
                 }
             }
         }
-    }
-
-    fn common_prefix(strings: &[String]) -> String {
-        if strings.is_empty() {
-            return String::new();
-        }
-
-        let first = &strings[0];
-        let mut prefix_len = first.len();
-
-        for s in &strings[1..] {
-            prefix_len = first
-                .chars()
-                .zip(s.chars())
-                .take(prefix_len)
-                .take_while(|(a, b)| a == b)
-                .count();
-        }
-
-        first.chars().take(prefix_len).collect()
     }
 
     fn read_line(&mut self) -> io::Result<bool> {
