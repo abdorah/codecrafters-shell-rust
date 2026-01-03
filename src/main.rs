@@ -515,16 +515,56 @@ impl Shell {
             self.show_completions(&completions);
         }
     }
+
+    fn longest_common_prefix(strings: &[String]) -> String {
+        if strings.is_empty() {
+            return String::new();
+        }
+
+        if strings.len() == 1 {
+            return strings[0].clone();
+        }
+
+        let first = &strings[0];
+        let mut prefix_len = first.len();
+
+        for s in &strings[1..] {
+            prefix_len = first
+                .chars()
+                .zip(s.chars())
+                .take(prefix_len)
+                .take_while(|(a, b)| a == b)
+                .count();
+
+            if prefix_len == 0 {
+                break;
+            }
+        }
+
+        first.chars().take(prefix_len).collect()
+    }
+
     fn handle_tab(&mut self) {
         if let Some((start, end, word)) = self.editor.get_word_at_cursor() {
             let completions = self.find_completions(word);
 
             match completions.len() {
+                0 => {
+                    print!("\x07");
+                    let _ = io::stdout().flush();
+                }
                 1 => {
                     self.editor.replace_word(start, end, &completions[0]);
                     self.redraw_line();
                 }
                 _ => {
+                    let lcp = Self::longest_common_prefix(&completions);
+
+                    if lcp.len() > word.len() {
+                        self.editor.replace_word(start, end, &lcp);
+                        self.redraw_line();
+                    }
+
                     print!("\x07");
                     let _ = io::stdout().flush();
                 }
