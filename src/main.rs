@@ -503,7 +503,7 @@ impl Shell {
 
     fn show_completions(&self, completions: &[String]) {
         println!();
-        println!("{}", completions.join("  "));
+        println!("{}", completions.join(""));
         self.print_prompt();
         print!("{}", self.editor.buffer);
         let _ = io::stdout().flush();
