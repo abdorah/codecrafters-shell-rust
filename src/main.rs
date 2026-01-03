@@ -518,10 +518,8 @@ impl Shell {
         if let Some((start, end, word)) = self.editor.get_word_at_cursor() {
             let completions = self.find_completions(word);
             let common = Self::common_prefix(&completions);
-            if common.len() > word.len() {
-                self.show_completions(&completions);
-                self.redraw_line();
-            }
+            self.editor.replace_word(start, end, &common);
+            self.show_completions(&completions);
         }
     }
 
