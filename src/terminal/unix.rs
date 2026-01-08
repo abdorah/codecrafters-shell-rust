@@ -3,7 +3,6 @@
 /// ============================================
 use libc::{ECHO, ICANON, TCSANOW, VMIN, VTIME, c_int, termios};
 use std::io;
-use std::io::Read;
 use std::os::unix::io::AsRawFd;
 
 pub struct RawMode {

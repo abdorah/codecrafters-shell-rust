@@ -5,6 +5,9 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::{Command as ProcessCommand, Stdio};
 
+#[cfg(unix)]
+use std::io::Read;
+
 mod terminal;
 // ============================================
 // KEY CODES
