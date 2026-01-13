@@ -711,7 +711,6 @@ impl Shell {
                     }
                 }
                 '|' if !in_single_quote && !in_double_quote => {
-                    // Finish current argument
                     if !current_arg.is_empty() {
                         if let Some(mut redirect) = current_redirect.take() {
                             redirect.file = current_arg.clone();
@@ -721,14 +720,10 @@ impl Shell {
                         }
                         current_arg.clear();
                     }
-                    
-                    // Add current command to pipeline and start new one
                     if !current_command.args.is_empty() {
                         pipeline.add_command(current_command);
                         current_command = ParsedCommand::new();
                     }
-                    
-                    // Reset state for next command
                     expecting_file = false;
                     current_redirect = None;
                 }
@@ -738,7 +733,6 @@ impl Shell {
             }
         }
 
-        // Handle final argument/redirect
         if !current_arg.is_empty() {
             if let Some(mut redirect) = current_redirect.take() {
                 redirect.file = current_arg;
@@ -748,7 +742,6 @@ impl Shell {
             }
         }
 
-        // Add final command if it has arguments
         if !current_command.args.is_empty() {
             pipeline.add_command(current_command);
         }
@@ -826,20 +819,23 @@ impl Shell {
     /// Executes a pipeline of commands connected by pipes
     ///
     /// Creates a chain of processes where the stdout of each command
-    /// is connected to the stdin of the next command.
+    /// is connected to the stdin of the next command. Handles both
+    /// external commands and builtin commands in pipelines.
     ///
     /// # Arguments
     ///
     /// * `pipeline` - The pipeline containing commands to execute
     fn execute_pipeline(&mut self, pipeline: &Pipeline) {
         use std::process::{Child, Stdio};
-        
+        use std::io::Write;
+
         if pipeline.commands.is_empty() {
             return;
         }
 
         let mut children: Vec<Child> = Vec::new();
         let mut previous_stdout: Option<Stdio> = None;
+        let mut builtin_output: Option<String> = None;
 
         for (i, parsed_cmd) in pipeline.commands.iter().enumerate() {
             if parsed_cmd.args.is_empty() {
@@ -852,27 +848,38 @@ impl Shell {
 
             // Handle built-in commands in pipelines
             if self.builtins.contains(command_name.as_str()) {
-                if !is_last {
-                    // Built-in commands in the middle of a pipeline need special handling
-                    // For now, we'll treat them as external commands and show an error
-                    eprintln!("{}: builtin commands not supported in pipelines yet", command_name);
-                    return;
-                } else {
-                    // Last command in pipeline can be a builtin
-                    let builtin_args = ParsedCommand {
-                        args: args.to_vec(),
-                        redirects: parsed_cmd.redirects.clone(),
-                    };
-                    
-                    match command_name.as_str() {
-                        "echo" => self.cmd_echo(&builtin_args),
-                        "type" => self.cmd_type(&builtin_args),
-                        "pwd" => self.cmd_pwd(&builtin_args),
-                        "cd" => self.cmd_cd(&builtin_args),
-                        "exit" => self.cmd_exit(&builtin_args),
-                        _ => unreachable!(),
+                let builtin_args = ParsedCommand {
+                    args: args.to_vec(),
+                    redirects: parsed_cmd.redirects.clone(),
+                };
+
+                if is_last {
+                    // Last command: execute builtin normally, but handle piped input
+                    if let Some(input) = builtin_output.take() {
+                        self.execute_builtin_with_input(command_name, &builtin_args, &input);
+                    } else if let Some(stdin) = previous_stdout.take() {
+                        // Read from previous external command
+                        let input = self.read_from_stdio(stdin);
+                        self.execute_builtin_with_input(command_name, &builtin_args, &input);
+                    } else {
+                        // No piped input, execute normally
+                        self.execute_builtin(command_name, &builtin_args);
                     }
                     return;
+                } else {
+                    // Builtin in middle of pipeline: capture its output
+                    let output = if let Some(input) = builtin_output.take() {
+                        self.execute_builtin_capture_output(command_name, &builtin_args, Some(&input))
+                    } else if let Some(stdin) = previous_stdout.take() {
+                        let input = self.read_from_stdio(stdin);
+                        self.execute_builtin_capture_output(command_name, &builtin_args, Some(&input))
+                    } else {
+                        self.execute_builtin_capture_output(command_name, &builtin_args, None)
+                    };
+                    
+                    builtin_output = Some(output);
+                    previous_stdout = None;
+                    continue;
                 }
             }
 
@@ -886,8 +893,30 @@ impl Shell {
             let mut cmd = ProcessCommand::new(command_name);
             cmd.args(args);
 
-            // Set up stdin (from previous command or inherit)
-            if let Some(stdin) = previous_stdout.take() {
+            // Set up stdin (from previous command, builtin output, or inherit)
+            if let Some(input) = builtin_output.take() {
+                // Previous command was a builtin, pipe its output to this command
+                match cmd
+                    .stdin(Stdio::piped())
+                    .stdout(if is_last { Stdio::inherit() } else { Stdio::piped() })
+                    .spawn() {
+                    Ok(mut child) => {
+                        if let Some(ref mut stdin) = child.stdin {
+                            let _ = stdin.write_all(input.as_bytes());
+                        }
+                        
+                        if !is_last {
+                            previous_stdout = child.stdout.take().map(Stdio::from);
+                        }
+                        children.push(child);
+                    }
+                    Err(e) => {
+                        eprintln!("{}: {}", command_name, e);
+                        return;
+                    }
+                }
+                continue;
+            } else if let Some(stdin) = previous_stdout.take() {
                 cmd.stdin(stdin);
             }
 
@@ -941,6 +970,88 @@ impl Shell {
         // Wait for all processes to complete
         for mut child in children {
             let _ = child.wait();
+        }
+    }
+
+    /// Reads all output from a Stdio handle
+    fn read_from_stdio(&self, _stdio: Stdio) -> String {
+        // This is a placeholder - converting Stdio back to readable is complex
+        // In a real implementation, we'd need to use temporary files or other mechanisms
+        String::new()
+    }
+
+    /// Executes a builtin command and captures its output as a string
+    fn execute_builtin_capture_output(&self, command: &str, args: &ParsedCommand, _input: Option<&str>) -> String {
+        use std::io::Write;
+        
+        // Capture output by redirecting to a string buffer
+        let mut output = Vec::new();
+        
+        match command {
+            "echo" => {
+                let result = args.args.join(" ");
+                output.extend_from_slice(result.as_bytes());
+                output.push(b'\n');
+            }
+            "pwd" => {
+                match std::env::current_dir() {
+                    Ok(path) => {
+                        output.extend_from_slice(path.display().to_string().as_bytes());
+                        output.push(b'\n');
+                    }
+                    Err(_) => {
+                        // Error handling - for pipes, we might want to pass errors through
+                    }
+                }
+            }
+            "type" => {
+                for cmd in &args.args {
+                    if cmd.is_empty() {
+                        continue;
+                    }
+                    
+                    let result = if self.builtins.contains(cmd.as_str()) {
+                        format!("{} is a shell builtin\n", cmd)
+                    } else if let Some(path) = self.find_executable(cmd) {
+                        format!("{} is {}\n", cmd, path)
+                    } else {
+                        format!("{}: not found\n", cmd)
+                    };
+                    output.extend_from_slice(result.as_bytes());
+                }
+            }
+            _ => {
+                // For commands like cd and exit, they don't produce output in pipes
+                // cd changes directory but doesn't output anything
+                // exit would terminate the shell, which doesn't make sense in a pipe
+            }
+        }
+        
+        String::from_utf8_lossy(&output).to_string()
+    }
+
+    /// Executes a builtin command with piped input
+    fn execute_builtin_with_input(&self, command: &str, args: &ParsedCommand, _input: &str) {
+        match command {
+            "echo" => self.cmd_echo(args),
+            "type" => self.cmd_type(args),
+            "pwd" => self.cmd_pwd(args),
+            "cd" => self.cmd_cd(args),
+            "exit" => self.cmd_exit(args),
+            _ => {}
+        }
+        // Note: Most builtins don't actually use stdin, but some could be enhanced to do so
+    }
+
+    /// Executes a builtin command normally
+    fn execute_builtin(&self, command: &str, args: &ParsedCommand) {
+        match command {
+            "echo" => self.cmd_echo(args),
+            "type" => self.cmd_type(args),
+            "pwd" => self.cmd_pwd(args),
+            "cd" => self.cmd_cd(args),
+            "exit" => self.cmd_exit(args),
+            _ => {}
         }
     }
 
