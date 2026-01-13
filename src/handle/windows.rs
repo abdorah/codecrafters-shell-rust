@@ -1,6 +1,29 @@
-use crate::handle::constants::Key;
-use std::io::{self};
+//! Windows key reading implementation
+//! 
+//! Provides key reading functionality on Windows systems using the Console API
+//! to read input events and convert them to Key enum values.
 
+use crate::handle::constants::Key;
+use std::io;
+
+/// Reads a single key press from the Windows console
+/// 
+/// Uses the Windows Console API to read input events and converts them
+/// to the cross-platform Key enum. Handles:
+/// - Regular characters
+/// - Special keys (arrows, function keys, etc.)
+/// - Control key combinations
+/// 
+/// # Returns
+/// 
+/// - `Ok(Some(Key))` if a key was read and recognized
+/// - `Ok(None)` if no key input was available (key up events, etc.)
+/// - `Err(io::Error)` if a console API error occurred
+/// 
+/// # Note
+/// 
+/// This function should be called while the console is in raw mode
+/// for proper key detection.
 pub fn read_key() -> io::Result<Option<Key>> {
     use windows::Win32::System::Console::{
         GetStdHandle, INPUT_RECORD, KEY_EVENT, ReadConsoleInputW, STD_INPUT_HANDLE,

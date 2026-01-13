@@ -1,8 +1,31 @@
+//! Unix key reading implementation
+//! 
+//! Provides key reading functionality on Unix-like systems by reading
+//! raw bytes from stdin and interpreting them as key codes, including
+//! escape sequences for special keys.
+
 use crate::handle::constants::Key;
 use std::io;
-
 use std::io::Read;
 
+/// Reads a single key press from stdin on Unix systems
+/// 
+/// Interprets raw bytes and escape sequences to determine which key was pressed.
+/// Handles:
+/// - Regular ASCII characters
+/// - Control characters (Ctrl+C, Ctrl+D, etc.)
+/// - Escape sequences for arrow keys, function keys, etc.
+/// 
+/// # Returns
+/// 
+/// - `Ok(Some(Key))` if a key was read and recognized
+/// - `Ok(None)` if no input was available
+/// - `Err(io::Error)` if a read error occurred
+/// 
+/// # Note
+/// 
+/// This function should be called while the terminal is in raw mode
+/// for proper key detection.
 pub fn read_key() -> io::Result<Option<Key>> {
     let mut stdin = io::stdin();
     let mut buf = [0u8; 1];
