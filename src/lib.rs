@@ -1,7 +1,7 @@
 //! # Simple Shell
 //!
 //! A cross-platform shell implementation in Rust that provides basic shell functionality
-//! including command execution, built-in commands, tab completion, and I/O redirection.
+//! including command execution, built-in commands, tab completion, I/O redirection, and pipes.
 //!
 //! ## Features
 //!
@@ -9,6 +9,7 @@
 //! - **External command execution**: Run any executable in PATH
 //! - **Tab completion**: Auto-complete commands and show suggestions
 //! - **I/O redirection**: Support for `>`, `>>`, `1>`, `2>` redirection
+//! - **Pipes**: Chain commands together with `|` operator
 //! - **Cross-platform**: Works on Windows, macOS, and Linux
 //! - **Line editing**: Cursor movement, backspace, delete with arrow keys
 //!
@@ -76,6 +77,32 @@ struct ParsedCommand {
     redirects: Vec<Redirect>,
 }
 
+/// Represents a pipeline of commands connected by pipes
+#[derive(Debug)]
+struct Pipeline {
+    /// List of commands in the pipeline
+    commands: Vec<ParsedCommand>,
+}
+
+impl Pipeline {
+    /// Creates a new empty pipeline
+    fn new() -> Self {
+        Self {
+            commands: Vec::new(),
+        }
+    }
+
+    /// Adds a command to the pipeline
+    fn add_command(&mut self, command: ParsedCommand) {
+        self.commands.push(command);
+    }
+
+    /// Returns true if this is a single command (no pipes)
+    fn is_single_command(&self) -> bool {
+        self.commands.len() <= 1
+    }
+}
+
 impl ParsedCommand {
     /// Creates a new empty parsed command
     fn new() -> Self {
@@ -86,14 +113,6 @@ impl ParsedCommand {
     }
 }
 
-/// Represents a parsed command with arguments and redirections
-#[derive(Debug)]
-struct Pipe {
-    commands: Vec<ParsedCo>,
-    /// List of file redirections to apply
-    pipes: Vec<Redirect>,
-}
-
 /// The main shell implementation
 ///
 /// Provides a REPL (Read-Eval-Print Loop) interface with support for:
@@ -101,6 +120,7 @@ struct Pipe {
 /// - External command execution
 /// - Tab completion
 /// - I/O redirection
+/// - Command pipelines with the `|` operator
 /// - Cross-platform terminal handling
 ///
 /// # Example
@@ -533,36 +553,25 @@ impl Shell {
         }
     }
 
-    /// Parses the current input buffer into command and arguments
+    /// Parses the current input buffer into a pipeline of commands
     ///
-    /// Splits the current line into a command name and a ParsedCommand
-    /// containing arguments and redirections.
+    /// Splits the current line into commands separated by pipes, with each
+    /// command containing arguments and redirections.
     ///
     /// # Returns
     ///
-    /// A tuple of (command_name, parsed_command_with_args_and_redirects)
-    fn parse(&self) -> (String, ParsedCommand) {
-        let parsed = Self::parse_arguments(self.editor.buffer.trim());
-
-        if parsed.args.is_empty() {
-            return (String::new(), parsed);
-        }
-
-        let command = parsed.args[0].clone();
-        let remaining = ParsedCommand {
-            args: parsed.args[1..].to_vec(),
-            redirects: parsed.redirects,
-        };
-
-        (command, remaining)
+    /// A Pipeline containing one or more ParsedCommands
+    fn parse(&self) -> Pipeline {
+        Self::parse_pipeline(self.editor.buffer.trim())
     }
 
-    /// Parses a command line string into arguments and redirections
+    /// Parses a command line string into a pipeline of commands
     ///
     /// Handles:
     /// - Quote parsing (single and double quotes)
     /// - Escape sequences
     /// - I/O redirection operators (`>`, `>>`, `1>`, `2>`, etc.)
+    /// - Pipe operators (`|`) to separate commands
     /// - Argument splitting on whitespace
     ///
     /// # Arguments
@@ -571,9 +580,10 @@ impl Shell {
     ///
     /// # Returns
     ///
-    /// A ParsedCommand containing the parsed arguments and redirections
-    fn parse_arguments(input: &str) -> ParsedCommand {
-        let mut result = ParsedCommand::new();
+    /// A Pipeline containing the parsed commands
+    fn parse_pipeline(input: &str) -> Pipeline {
+        let mut pipeline = Pipeline::new();
+        let mut current_command = ParsedCommand::new();
         let mut current_arg = String::new();
         let mut in_single_quote = false;
         let mut in_double_quote = false;
@@ -590,7 +600,7 @@ impl Shell {
                             && let Some(mut redirect) = current_redirect.take()
                         {
                             redirect.file = current_arg.clone();
-                            result.redirects.push(redirect);
+                            current_command.redirects.push(redirect);
                             current_arg.clear();
                             expecting_file = false;
                         }
@@ -633,7 +643,7 @@ impl Shell {
                 '2' if !in_single_quote && !in_double_quote => {
                     if chars.peek() == Some(&'>') {
                         if !current_arg.is_empty() {
-                            result.args.push(current_arg.clone());
+                            current_command.args.push(current_arg.clone());
                             current_arg.clear();
                         }
 
@@ -656,7 +666,7 @@ impl Shell {
                 '1' if !in_single_quote && !in_double_quote => {
                     if chars.peek() == Some(&'>') {
                         if !current_arg.is_empty() {
-                            result.args.push(current_arg.clone());
+                            current_command.args.push(current_arg.clone());
                             current_arg.clear();
                         }
 
@@ -678,7 +688,7 @@ impl Shell {
                 }
                 '>' if !in_single_quote && !in_double_quote => {
                     if !current_arg.is_empty() {
-                        result.args.push(current_arg.clone());
+                        current_command.args.push(current_arg.clone());
                         current_arg.clear();
                     }
 
@@ -696,27 +706,54 @@ impl Shell {
                 }
                 ' ' if !in_single_quote && !in_double_quote => {
                     if !current_arg.is_empty() {
-                        result.args.push(current_arg.clone());
+                        current_command.args.push(current_arg.clone());
                         current_arg.clear();
                     }
                 }
-                '|' if !in_single_quote && !in_double_quote => {}
+                '|' if !in_single_quote && !in_double_quote => {
+                    // Finish current argument
+                    if !current_arg.is_empty() {
+                        if let Some(mut redirect) = current_redirect.take() {
+                            redirect.file = current_arg.clone();
+                            current_command.redirects.push(redirect);
+                        } else {
+                            current_command.args.push(current_arg.clone());
+                        }
+                        current_arg.clear();
+                    }
+                    
+                    // Add current command to pipeline and start new one
+                    if !current_command.args.is_empty() {
+                        pipeline.add_command(current_command);
+                        current_command = ParsedCommand::new();
+                    }
+                    
+                    // Reset state for next command
+                    expecting_file = false;
+                    current_redirect = None;
+                }
                 _ => {
                     current_arg.push(c);
                 }
             }
         }
 
+        // Handle final argument/redirect
         if !current_arg.is_empty() {
             if let Some(mut redirect) = current_redirect.take() {
                 redirect.file = current_arg;
-                result.redirects.push(redirect);
+                current_command.redirects.push(redirect);
             } else {
-                result.args.push(current_arg);
+                current_command.args.push(current_arg);
             }
         }
 
-        result
+        // Add final command if it has arguments
+        if !current_command.args.is_empty() {
+            pipeline.add_command(current_command);
+        }
+
+        pipeline
     }
 
     /// Opens a file for redirection based on redirect configuration
@@ -740,31 +777,170 @@ impl Shell {
         }
     }
 
-    /// Evaluates and executes the current command
+    /// Evaluates and executes the current command or pipeline
     ///
     /// Parses the current input and dispatches to the appropriate handler:
-    /// - Built-in commands (echo, type, pwd, cd, exit)
-    /// - External commands (executables in PATH)
+    /// - Single commands: Built-in commands or external commands
+    /// - Pipelines: Chains commands together with pipes
     ///
     /// Also handles I/O redirection setup before command execution.
     fn eval(&mut self) {
-        let (command, parsed) = self.parse();
+        let pipeline = self.parse();
 
-        if command.is_empty() {
+        if pipeline.commands.is_empty() {
             return;
         }
 
-        for redirect in &parsed.redirects {
-            let _ = Self::open_redirect_file(redirect);
+        if pipeline.is_single_command() {
+            // Handle single command (existing logic)
+            let parsed = &pipeline.commands[0];
+            if parsed.args.is_empty() {
+                return;
+            }
+
+            let command = &parsed.args[0];
+            let args = ParsedCommand {
+                args: parsed.args[1..].to_vec(),
+                redirects: parsed.redirects.clone(),
+            };
+
+            // Set up redirections
+            for redirect in &args.redirects {
+                let _ = Self::open_redirect_file(redirect);
+            }
+
+            match command.as_str() {
+                "echo" => self.cmd_echo(&args),
+                "type" => self.cmd_type(&args),
+                "pwd" => self.cmd_pwd(&args),
+                "cd" => self.cmd_cd(&args),
+                "exit" => self.cmd_exit(&args),
+                _ => self.cmd_external(command, &args),
+            }
+        } else {
+            // Handle pipeline
+            self.execute_pipeline(&pipeline);
+        }
+    }
+
+    /// Executes a pipeline of commands connected by pipes
+    ///
+    /// Creates a chain of processes where the stdout of each command
+    /// is connected to the stdin of the next command.
+    ///
+    /// # Arguments
+    ///
+    /// * `pipeline` - The pipeline containing commands to execute
+    fn execute_pipeline(&mut self, pipeline: &Pipeline) {
+        use std::process::{Child, Stdio};
+        
+        if pipeline.commands.is_empty() {
+            return;
         }
 
-        match command.as_str() {
-            "echo" => self.cmd_echo(&parsed),
-            "type" => self.cmd_type(&parsed),
-            "pwd" => self.cmd_pwd(&parsed),
-            "cd" => self.cmd_cd(&parsed),
-            "exit" => self.cmd_exit(&parsed),
-            _ => self.cmd_external(&command, &parsed),
+        let mut children: Vec<Child> = Vec::new();
+        let mut previous_stdout: Option<Stdio> = None;
+
+        for (i, parsed_cmd) in pipeline.commands.iter().enumerate() {
+            if parsed_cmd.args.is_empty() {
+                continue;
+            }
+
+            let command_name = &parsed_cmd.args[0];
+            let args = &parsed_cmd.args[1..];
+            let is_last = i == pipeline.commands.len() - 1;
+
+            // Handle built-in commands in pipelines
+            if self.builtins.contains(command_name.as_str()) {
+                if !is_last {
+                    // Built-in commands in the middle of a pipeline need special handling
+                    // For now, we'll treat them as external commands and show an error
+                    eprintln!("{}: builtin commands not supported in pipelines yet", command_name);
+                    return;
+                } else {
+                    // Last command in pipeline can be a builtin
+                    let builtin_args = ParsedCommand {
+                        args: args.to_vec(),
+                        redirects: parsed_cmd.redirects.clone(),
+                    };
+                    
+                    match command_name.as_str() {
+                        "echo" => self.cmd_echo(&builtin_args),
+                        "type" => self.cmd_type(&builtin_args),
+                        "pwd" => self.cmd_pwd(&builtin_args),
+                        "cd" => self.cmd_cd(&builtin_args),
+                        "exit" => self.cmd_exit(&builtin_args),
+                        _ => unreachable!(),
+                    }
+                    return;
+                }
+            }
+
+            // Check if command exists
+            if self.find_executable(command_name).is_none() {
+                eprintln!("{}: command not found", command_name);
+                return;
+            }
+
+            // Create the process
+            let mut cmd = ProcessCommand::new(command_name);
+            cmd.args(args);
+
+            // Set up stdin (from previous command or inherit)
+            if let Some(stdin) = previous_stdout.take() {
+                cmd.stdin(stdin);
+            }
+
+            // Set up stdout (pipe to next command or inherit)
+            if is_last {
+                // Last command: handle redirections or use inherited stdout
+                for redirect in &parsed_cmd.redirects {
+                    match redirect.stream {
+                        StreamType::Stdout => {
+                            if let Ok(file) = Self::open_redirect_file(redirect) {
+                                cmd.stdout(Stdio::from(file));
+                            }
+                        }
+                        StreamType::Stderr => {
+                            if let Ok(file) = Self::open_redirect_file(redirect) {
+                                cmd.stderr(Stdio::from(file));
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Not last command: pipe stdout to next command
+                cmd.stdout(Stdio::piped());
+            }
+
+            // Handle stderr redirections (not piped)
+            for redirect in &parsed_cmd.redirects {
+                if matches!(redirect.stream, StreamType::Stderr) {
+                    if let Ok(file) = Self::open_redirect_file(redirect) {
+                        cmd.stderr(Stdio::from(file));
+                    }
+                }
+            }
+
+            // Spawn the process
+            match cmd.spawn() {
+                Ok(mut child) => {
+                    // Take stdout for next command if not the last
+                    if !is_last {
+                        previous_stdout = child.stdout.take().map(Stdio::from);
+                    }
+                    children.push(child);
+                }
+                Err(e) => {
+                    eprintln!("{}: {}", command_name, e);
+                    return;
+                }
+            }
+        }
+
+        // Wait for all processes to complete
+        for mut child in children {
+            let _ = child.wait();
         }
     }
 

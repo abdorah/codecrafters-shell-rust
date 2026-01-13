@@ -1,6 +1,6 @@
 # Simple Shell
 
-A cross-platform shell implementation in Rust that provides basic shell functionality including command execution, built-in commands, tab completion, and I/O redirection.
+A cross-platform shell implementation in Rust that provides basic shell functionality including command execution, built-in commands, tab completion, I/O redirection, and command pipelines.
 
 ## Features
 
@@ -8,6 +8,7 @@ A cross-platform shell implementation in Rust that provides basic shell function
 - **External Command Execution**: Run any executable in your PATH
 - **Tab Completion**: Auto-complete commands and show suggestions with double-tab
 - **I/O Redirection**: Support for `>`, `>>`, `1>`, `2>` redirection operators
+- **Command Pipelines**: Chain commands together with the `|` operator
 - **Cross-Platform**: Works on Windows, macOS, and Linux
 - **Line Editing**: Full cursor movement, backspace, delete with arrow keys
 - **Control Keys**: Support for Ctrl+C (interrupt), Ctrl+D (EOF), Ctrl+A/E (home/end)
@@ -53,6 +54,15 @@ $ echo "Hello" > output.txt
 $ cat output.txt
 Hello
 
+$ ls | grep shell
+shell
+
+$ echo "one\ntwo\nthree" | grep two
+two
+
+$ cat file.txt | sort | uniq
+sorted unique lines
+
 $ exit 0
 ```
 
@@ -62,9 +72,24 @@ The shell is organized into several modules:
 
 ### Core Components
 
-- **`Shell`** (`src/lib.rs`): Main shell implementation with command processing
+- **`Shell`** (`src/lib.rs`): Main shell implementation with command processing and pipeline execution
 - **`handle`** (`src/handle/`): Input handling and line editing
 - **`terminal`** (`src/terminal/`): Terminal raw mode control
+
+### Key Data Structures
+
+- **`ParsedCommand`**: Represents a single command with arguments and redirections
+- **`Pipeline`**: Represents a chain of commands connected by pipes
+- **`Redirect`**: Represents file redirection operations (`>`, `>>`, `2>`, etc.)
+
+### Command Processing Flow
+
+1. **Input**: `read_line()` captures user input with line editing
+2. **Parsing**: `parse_pipeline()` breaks input into commands and pipes
+3. **Execution**: 
+   - Single commands: Direct execution with `eval()`
+   - Pipelines: Chain execution with `execute_pipeline()`
+4. **Output**: Results are displayed or redirected
 
 ### Module Structure
 
@@ -133,6 +158,35 @@ Exits the shell with optional exit code (default: 0).
 $ exit
 $ exit 1
 ```
+
+## Command Pipelines
+
+The shell supports chaining commands together using the pipe (`|`) operator. The output of each command becomes the input to the next command.
+
+### Basic Pipes
+```bash
+$ ls | grep .txt                 # List files and filter for .txt files
+$ cat file.txt | sort            # Display file content and sort it
+$ echo "hello world" | wc -w     # Count words in the output
+```
+
+### Multi-stage Pipelines
+```bash
+$ ps aux | grep python | wc -l          # Count Python processes
+$ cat data.txt | sort | uniq | head -10 # Sort, deduplicate, show first 10
+$ find . -name "*.rs" | xargs wc -l     # Count lines in all Rust files
+```
+
+### Pipes with Redirection
+```bash
+$ ls | grep .txt > text_files.list      # Pipe and redirect to file
+$ cat input.txt | sort | tee sorted.txt # Pipe with tee to save intermediate result
+```
+
+### Current Limitations
+- Built-in commands (except as the last command) are not yet supported in pipelines
+- Complex quoting within pipes may not work as expected
+- Background processes (`&`) are not supported
 
 ## I/O Redirection
 
